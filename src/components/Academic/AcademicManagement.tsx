@@ -7,6 +7,7 @@ import { useAuth } from '../Auth/AuthProvider';
 import { GradeService } from '../../services/gradeService';
 import { SubjectService } from '../../services/subjectService';
 import { ClassService } from '../../services/classService';
+import { supabase } from '../../lib/supabase';
 
 const AcademicManagement: React.FC = () => {
   const { userSchool, currentAcademicYear } = useAuth();

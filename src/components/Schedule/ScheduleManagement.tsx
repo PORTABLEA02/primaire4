@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Clock, Users, BookOpen, Plus, Filter, Download, Edit, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Users, BookOpen, Plus, Filter, Download, Edit, Trash2, CheckCircle, AlertCircle } from 'lucide-react';
 import AddCourseModal from './AddCourseModal';
 
 interface TimeSlot {

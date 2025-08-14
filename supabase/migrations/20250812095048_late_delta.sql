@@ -329,7 +329,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Trigger pour créer automatiquement un profil utilisateur
+-- Trigger pour créer automatiquement un profil utilisateur/// a revoir 
 CREATE TRIGGER create_user_profile_trigger
   AFTER INSERT ON auth.users
   FOR EACH ROW
