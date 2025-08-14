@@ -1,50 +1,84 @@
 import React from 'react';
 import { Clock, Users, DollarSign, BookOpen, AlertCircle } from 'lucide-react';
-
-const activities = [
-  {
-    type: 'inscription',
-    title: 'Nouvelle inscription',
-    description: 'Kofi Mensah inscrit en CM2A',
-    time: 'Il y a 2 heures',
-    icon: Users,
-    color: 'blue'
-  },
-  {
-    type: 'paiement',
-    title: 'Paiement reçu',
-    description: '1ère Tranche - Fatima Diallo (CE1B) - 150,000 FCFA',
-    time: 'Il y a 3 heures',
-    icon: DollarSign,
-    color: 'green'
-  },
-  {
-    type: 'notes',
-    title: 'Notes saisies',
-    description: 'Mathématiques - CM1A (32 élèves) par M. Traore',
-    time: 'Il y a 5 heures',
-    icon: BookOpen,
-    color: 'purple'
-  },
-  {
-    type: 'alerte',
-    title: 'Paiement en retard',
-    description: '1ère Tranche - Amadou Kone (CP2)',
-    time: 'Il y a 1 jour',
-    icon: AlertCircle,
-    color: 'orange'
-  },
-  {
-    type: 'inscription',
-    title: 'Transfert d\'élève',
-    description: 'Aissata Ba transférée de CE2A vers CE2B',
-    time: 'Il y a 2 jours',
-    icon: Users,
-    color: 'blue'
-  }
-];
+import { useAuth } from '../Auth/AuthProvider';
+import { ActivityLogService } from '../../services/activityLogService';
+import { formatRelativeTime } from '../../utils/formatters';
 
 const RecentActivities: React.FC = () => {
+  const { userSchool } = useAuth();
+  const [activities, setActivities] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (userSchool) {
+      loadRecentActivities();
+    }
+  }, [userSchool]);
+
+  const loadRecentActivities = async () => {
+    if (!userSchool) return;
+
+    try {
+      setLoading(true);
+
+      const activityLogs = await ActivityLogService.getActivityLogs(userSchool.id, {
+        limit: 5
+      });
+
+      // Mapper les logs vers le format d'activités
+      const mappedActivities = activityLogs.map(log => ({
+        type: log.entity_type,
+        title: getActivityTitle(log.action, log.entity_type),
+        description: log.details || `${log.action} ${log.entity_type}`,
+        time: formatRelativeTime(log.created_at),
+        icon: getActivityIcon(log.entity_type),
+        color: getActivityColor(log.level)
+      }));
+
+      setActivities(mappedActivities);
+
+    } catch (error) {
+      console.error('Erreur lors du chargement des activités:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getActivityTitle = (action: string, entityType: string) => {
+    const titles: Record<string, string> = {
+      'CREATE_STUDENT': 'Nouvelle inscription',
+      'RECORD_PAYMENT': 'Paiement reçu',
+      'CREATE_GRADE': 'Notes saisies',
+      'CREATE_CLASS': 'Nouvelle classe',
+      'ASSIGN_TEACHER': 'Affectation enseignant',
+      'LOGIN': 'Connexion utilisateur',
+      'LOGOUT': 'Déconnexion utilisateur'
+    };
+    return titles[action] || `${action} ${entityType}`;
+  };
+
+  const getActivityIcon = (entityType: string) => {
+    const icons: Record<string, any> = {
+      'student': Users,
+      'payment': DollarSign,
+      'grade': BookOpen,
+      'class': Users,
+      'teacher': Users,
+      'auth': AlertCircle
+    };
+    return icons[entityType] || AlertCircle;
+  };
+
+  const getActivityColor = (level: string) => {
+    const colors: Record<string, string> = {
+      'success': 'green',
+      'info': 'blue',
+      'warning': 'orange',
+      'error': 'red'
+    };
+    return colors[level] || 'blue';
+  };
+
   const getColorClasses = (color: string) => {
     const colorMap = {
       blue: 'bg-blue-50 text-blue-600',
@@ -55,6 +89,27 @@ const RecentActivities: React.FC = () => {
     return colorMap[color as keyof typeof colorMap] || colorMap.blue;
   };
 
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-800">Activités Récentes</h2>
+        </div>
+        <div className="space-y-4">
+          {[...Array(5)].map((_, index) => (
+            <div key={index} className="animate-pulse flex items-center space-x-3 p-3">
+              <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-100">
       <div className="flex items-center justify-between mb-6">
@@ -64,7 +119,8 @@ const RecentActivities: React.FC = () => {
         </button>
       </div>
       
-      <div className="space-y-4">
+      {activities.length > 0 ? (
+        <div className="space-y-4">
         {activities.map((activity, index) => {
           const Icon = activity.icon;
           
@@ -86,7 +142,14 @@ const RecentActivities: React.FC = () => {
             </div>
           );
         })}
-      </div>
+        </div>
+      ) : (
+        <div className="text-center py-8">
+          <Clock className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500">Aucune activité récente</p>
+          <p className="text-sm text-gray-400">Les activités apparaîtront ici au fur et à mesure</p>
+        </div>
+      )}
     </div>
   );
 };

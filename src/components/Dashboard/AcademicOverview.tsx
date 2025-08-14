@@ -1,43 +1,93 @@
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
-
-const academicData = [
-  {
-    level: 'Maternelle',
-    students: 180,
-    classes: 8,
-    trend: 'up',
-    percentage: 5.2
-  },
-  {
-    level: 'Primaire CI-CP',
-    students: 240,
-    classes: 10,
-    trend: 'up',
-    percentage: 8.1
-  },
-  {
-    level: 'Primaire CE1-CE2',
-    students: 320,
-    classes: 12,
-    trend: 'up',
-    percentage: 3.4
-  },
-  {
-    level: 'Primaire CM1-CM2',
-    students: 285,
-    classes: 12,
-    trend: 'down',
-    percentage: -2.1
-  }
-];
+import { useAuth } from '../Auth/AuthProvider';
+import { supabase } from '../../lib/supabase';
 
 const AcademicOverview: React.FC = () => {
+  const { userSchool, currentAcademicYear } = useAuth();
+  const [academicData, setAcademicData] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (userSchool && currentAcademicYear) {
+      loadAcademicData();
+    }
+  }, [userSchool, currentAcademicYear]);
+
+  const loadAcademicData = async () => {
+    if (!userSchool || !currentAcademicYear) return;
+
+    try {
+      setLoading(true);
+
+      // Charger les données par niveau
+      const { data: enrollmentData, error } = await supabase
+        .from('enrollment_details')
+        .select('level, class_name')
+        .eq('school_id', userSchool.id)
+        .eq('academic_year_id', currentAcademicYear.id)
+        .eq('is_active', true);
+
+      if (error) throw error;
+
+      // Grouper par niveau
+      const levelStats = (enrollmentData || []).reduce((acc, enrollment) => {
+        const level = enrollment.level;
+        if (!acc[level]) {
+          acc[level] = {
+            level,
+            students: 0,
+            classes: new Set(),
+            trend: 'up', // TODO: Calculer la vraie tendance
+            percentage: Math.random() * 10 - 5 // TODO: Calculer la vraie évolution
+          };
+        }
+        acc[level].students += 1;
+        acc[level].classes.add(enrollment.class_name);
+        return acc;
+      }, {} as Record<string, any>);
+
+      // Convertir en tableau
+      const academicDataArray = Object.values(levelStats).map((level: any) => ({
+        ...level,
+        classes: level.classes.size
+      }));
+
+      setAcademicData(academicDataArray);
+
+    } catch (error) {
+      console.error('Erreur lors du chargement des données académiques:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-100">
+        <h2 className="text-base sm:text-lg font-semibold text-gray-800 mb-4 sm:mb-6">Répartition Académique</h2>
+        <div className="animate-pulse">
+          <div className="space-y-3">
+            {[...Array(4)].map((_, index) => (
+              <div key={index} className="flex items-center space-x-3 p-3">
+                <div className="h-4 bg-gray-200 rounded w-24"></div>
+                <div className="h-4 bg-gray-200 rounded w-16"></div>
+                <div className="h-4 bg-gray-200 rounded w-12"></div>
+                <div className="h-4 bg-gray-200 rounded w-16"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-100">
       <h2 className="text-base sm:text-lg font-semibold text-gray-800 mb-4 sm:mb-6">Répartition Académique</h2>
       
-      <div className="overflow-x-auto">
+      {academicData.length > 0 ? (
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-100">
@@ -77,7 +127,14 @@ const AcademicOverview: React.FC = () => {
             ))}
           </tbody>
         </table>
-      </div>
+        </div>
+      ) : (
+        <div className="text-center py-8">
+          <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500">Aucune donnée académique disponible</p>
+          <p className="text-sm text-gray-400">Les données apparaîtront après les premières inscriptions</p>
+        </div>
+      )}
     </div>
   );
 };
