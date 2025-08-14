@@ -1,82 +1,91 @@
 import React, { useState } from 'react';
 import { User, Clock, MapPin, BookOpen, Calendar } from 'lucide-react';
+import { useAuth } from '../Auth/AuthProvider';
+import { TeacherService } from '../../services/teacherService';
+import { ScheduleService } from '../../services/scheduleService';
 
 interface TeacherScheduleProps {
   teacherId?: string;
 }
 
 const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ teacherId }) => {
+  const { userSchool, currentAcademicYear } = useAuth();
   const [selectedTeacher, setSelectedTeacher] = useState(teacherId || 'traore');
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [teacherSchedule, setTeacherSchedule] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const teachers = [
-    { 
-      id: 'traore', 
-      name: 'M. Moussa Traore', 
-      assignedClass: 'CI A',
-      subjects: ['Français', 'Mathématiques', 'Éveil Scientifique', 'Éducation Civique']
-    },
-    { 
-      id: 'kone', 
-      name: 'Mme Aminata Kone', 
-      assignedClass: 'Maternelle 1A',
-      subjects: ['Éveil', 'Langage', 'Graphisme', 'Jeux éducatifs']
-    },
-    { 
-      id: 'sidibe', 
-      name: 'M. Ibrahim Sidibe', 
-      assignedClass: 'CE2B',
-      subjects: ['Français', 'Mathématiques', 'Histoire-Géographie', 'Sciences', 'Éducation Civique']
-    },
-    { 
-      id: 'coulibaly', 
-      name: 'Mlle Fatoumata Coulibaly', 
-      assignedClass: null,
-      subjects: []
+  // Charger les données au montage
+  React.useEffect(() => {
+    if (userSchool && currentAcademicYear) {
+      loadTeacherData();
     }
-  ];
+  }, [userSchool, currentAcademicYear]);
 
-  const teacherSchedules = {
-    traore: [
-      { day: 'Lundi', time: '08:00-09:00', subject: 'Français', class: 'CI A', room: 'Salle 12' },
-      { day: 'Lundi', time: '09:00-10:00', subject: 'Mathématiques', class: 'CI A', room: 'Salle 12' },
-      { day: 'Lundi', time: '10:30-11:30', subject: 'Éveil Scientifique', class: 'CI A', room: 'Salle 12' },
-      { day: 'Lundi', time: '14:00-15:00', subject: 'Éducation Civique', class: 'CI A', room: 'Salle 12' },
-      { day: 'Mardi', time: '08:00-09:00', subject: 'Français', class: 'CI A', room: 'Salle 12' },
-      { day: 'Mardi', time: '09:00-10:00', subject: 'Mathématiques', class: 'CI A', room: 'Salle 12' },
-      { day: 'Mardi', time: '14:00-15:00', subject: 'Éveil Scientifique', class: 'CI A', room: 'Salle 12' },
-      { day: 'Mercredi', time: '08:00-09:00', subject: 'Français', class: 'CI A', room: 'Salle 12' },
-      { day: 'Mercredi', time: '09:00-10:00', subject: 'Mathématiques', class: 'CI A', room: 'Salle 12' },
-      { day: 'Jeudi', time: '08:00-09:00', subject: 'Français', class: 'CI A', room: 'Salle 12' },
-      { day: 'Jeudi', time: '09:00-10:00', subject: 'Mathématiques', class: 'CI A', room: 'Salle 12' },
-      { day: 'Jeudi', time: '14:00-15:00', subject: 'Éducation Civique', class: 'CI A', room: 'Salle 12' },
-      { day: 'Vendredi', time: '08:00-09:00', subject: 'Français', class: 'CI A', room: 'Salle 12' },
-      { day: 'Vendredi', time: '09:00-10:00', subject: 'Mathématiques', class: 'CI A', room: 'Salle 12' }
-    ],
-    kone: [
-      { day: 'Lundi', time: '08:00-09:00', subject: 'Éveil', class: 'Maternelle 1A', room: 'Salle 3' },
-      { day: 'Lundi', time: '09:00-10:00', subject: 'Langage', class: 'Maternelle 1A', room: 'Salle 3' },
-      { day: 'Lundi', time: '10:30-11:30', subject: 'Jeux éducatifs', class: 'Maternelle 1A', room: 'Salle 3' },
-      { day: 'Mardi', time: '08:00-09:00', subject: 'Graphisme', class: 'Maternelle 1A', room: 'Salle 3' },
-      { day: 'Mardi', time: '09:00-10:00', subject: 'Éveil', class: 'Maternelle 1A', room: 'Salle 3' },
-      { day: 'Mercredi', time: '08:00-09:00', subject: 'Langage', class: 'Maternelle 1A', room: 'Salle 3' },
-      { day: 'Jeudi', time: '08:00-09:00', subject: 'Jeux éducatifs', class: 'Maternelle 1A', room: 'Salle 3' },
-      { day: 'Vendredi', time: '08:00-09:00', subject: 'Graphisme', class: 'Maternelle 1A', room: 'Salle 3' }
-    ],
-    sidibe: [
-      { day: 'Lundi', time: '08:00-09:00', subject: 'Français', class: 'CE2B', room: 'Salle 8' },
-      { day: 'Lundi', time: '09:00-10:00', subject: 'Mathématiques', class: 'CE2B', room: 'Salle 8' },
-      { day: 'Lundi', time: '10:30-11:30', subject: 'Sciences', class: 'CE2B', room: 'Salle 8' },
-      { day: 'Mardi', time: '08:00-09:00', subject: 'Histoire-Géographie', class: 'CE2B', room: 'Salle 8' },
-      { day: 'Mardi', time: '09:00-10:00', subject: 'Français', class: 'CE2B', room: 'Salle 8' },
-      { day: 'Mercredi', time: '08:00-09:00', subject: 'Mathématiques', class: 'CE2B', room: 'Salle 8' },
-      { day: 'Jeudi', time: '08:00-09:00', subject: 'Éducation Civique', class: 'CE2B', room: 'Salle 8' },
-      { day: 'Vendredi', time: '08:00-09:00', subject: 'Sciences', class: 'CE2B', room: 'Salle 8' }
-    ]
+  // Charger les enseignants et l'emploi du temps
+  React.useEffect(() => {
+    if (selectedTeacher && currentAcademicYear) {
+      loadTeacherSchedule();
+    }
+  }, [selectedTeacher, currentAcademicYear]);
+
+  const loadTeacherData = async () => {
+    if (!userSchool) return;
+
+    try {
+      setLoading(true);
+      const teachersData = await TeacherService.getTeachers(userSchool.id);
+      
+      // Mapper les enseignants avec leurs classes assignées
+      const mappedTeachers = teachersData.map(teacher => {
+        const activeAssignment = teacher.current_assignment?.find((a: any) => a.is_active);
+        return {
+          id: teacher.id,
+          name: `${teacher.first_name} ${teacher.last_name}`,
+          assignedClass: activeAssignment?.class?.name || null,
+          subjects: activeAssignment?.class?.subjects || []
+        };
+      });
+      
+      setTeachers(mappedTeachers);
+      
+      // Sélectionner le premier enseignant si aucun n'est sélectionné
+      if (!selectedTeacher && mappedTeachers.length > 0) {
+        setSelectedTeacher(mappedTeachers[0].id);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des enseignants:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTeacherSchedule = async () => {
+    if (!selectedTeacher || !currentAcademicYear) return;
+
+    try {
+      setLoading(true);
+      const scheduleData = await TeacherService.getTeacherSchedule(selectedTeacher, currentAcademicYear.id);
+      
+      // Mapper les données de l'emploi du temps
+      const mappedSchedule = scheduleData.map(slot => ({
+        day: slot.day_name,
+        time: `${slot.start_time}-${slot.end_time}`,
+        subject: slot.subject_name,
+        class: slot.class_name,
+        room: slot.classroom_name || 'Non assignée'
+      }));
+      
+      setTeacherSchedule(mappedSchedule);
+    } catch (error) {
+      console.error('Erreur lors du chargement de l\'emploi du temps:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const currentTeacher = teachers.find(t => t.id === selectedTeacher);
-  const schedule = teacherSchedules[selectedTeacher as keyof typeof teacherSchedules] || [];
-
+  const schedule = teacherSchedule;
   const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
   const timeSlots = ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
 
@@ -108,6 +117,17 @@ const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ teacherId }) => {
     acc[item.subject] = (acc[item.subject] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement de l'emploi du temps...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -176,7 +196,7 @@ const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ teacherId }) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Matières Enseignées</p>
-                <p className="text-2xl font-bold text-gray-800">{currentTeacher.subjects.length}</p>
+                <p className="text-2xl font-bold text-gray-800">{Object.keys(subjectHours).length}</p>
               </div>
               <div className="p-3 bg-purple-50 rounded-xl">
                 <BookOpen className="h-6 w-6 text-purple-600" />
@@ -273,24 +293,31 @@ const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ teacherId }) => {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Répartition des Matières</h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {Object.entries(subjectHours).map(([subject, hours]) => (
-                <div key={subject} className={`p-4 rounded-lg border-2 ${getSubjectColor(subject)}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{subject}</span>
-                    <span className="text-sm font-bold">{hours}h</span>
-                  </div>
-                  <div className="mt-2">
-                    <div className="w-full bg-white bg-opacity-50 rounded-full h-2">
-                      <div 
-                        className="bg-current h-2 rounded-full opacity-60"
-                        style={{ width: `${(hours / totalHours) * 100}%` }}
-                      ></div>
+            {Object.keys(subjectHours).length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.entries(subjectHours).map(([subject, hours]) => (
+                  <div key={subject} className={`p-4 rounded-lg border-2 ${getSubjectColor(subject)}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{subject}</span>
+                      <span className="text-sm font-bold">{hours}h</span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="w-full bg-white bg-opacity-50 rounded-full h-2">
+                        <div 
+                          className="bg-current h-2 rounded-full opacity-60"
+                          style={{ width: `${(hours / totalHours) * 100}%` }}
+                        ></div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">Aucun cours programmé</p>
+              </div>
+            )}
           </div>
           
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -342,6 +369,14 @@ const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ teacherId }) => {
               Assigner une Classe
             </button>
           </div>
+        </div>
+      )}
+
+      {teachers.length === 0 && !loading && (
+        <div className="text-center py-12">
+          <User className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-800 mb-2">Aucun enseignant trouvé</h3>
+          <p className="text-gray-600">Ajoutez des enseignants pour voir leurs emplois du temps</p>
         </div>
       )}
     </div>

@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { X, Plus, Clock, Users, BookOpen, MapPin, User, Calendar } from 'lucide-react';
+import { useAuth } from '../Auth/AuthProvider';
+import { TeacherService } from '../../services/teacherService';
+import { ClassService } from '../../services/classService';
+import { SubjectService } from '../../services/subjectService';
+import { ClassroomService } from '../../services/classroomService';
 
 interface AddCourseModalProps {
   isOpen: boolean;
@@ -20,26 +25,18 @@ interface NewCourseData {
   notes?: string;
 }
 
-interface Teacher {
-  id: string;
-  name: string;
-  assignedClass: string;
-  subjects: string[];
-}
-
-interface ClassInfo {
-  id: string;
-  name: string;
-  level: string;
-  teacher: string;
-  subjects: string[];
-}
-
 const AddCourseModal: React.FC<AddCourseModalProps> = ({
   isOpen,
   onClose,
   onAddCourse
 }) => {
+  const { userSchool, currentAcademicYear } = useAuth();
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [classrooms, setClassrooms] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
   const [formData, setFormData] = useState<NewCourseData>({
     subject: '',
     teacherId: '',
@@ -55,59 +52,59 @@ const AddCourseModal: React.FC<AddCourseModalProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Données des enseignants avec leurs classes assignées
-  const teachers: Teacher[] = [
-    {
-      id: 'traore',
-      name: 'M. Moussa Traore',
-      assignedClass: 'CI A',
-      subjects: ['Français', 'Mathématiques', 'Éveil Scientifique', 'Éducation Civique']
-    },
-    {
-      id: 'kone',
-      name: 'Mme Aminata Kone',
-      assignedClass: 'Maternelle 1A',
-      subjects: ['Éveil', 'Langage', 'Graphisme', 'Jeux éducatifs']
-    },
-    {
-      id: 'sidibe',
-      name: 'M. Ibrahim Sidibe',
-      assignedClass: 'CE2B',
-      subjects: ['Français', 'Mathématiques', 'Histoire-Géographie', 'Sciences', 'Éducation Civique']
-    },
-    {
-      id: 'coulibaly',
-      name: 'Mlle Fatoumata Coulibaly',
-      assignedClass: 'Disponible',
-      subjects: []
+  // Charger les données au montage
+  React.useEffect(() => {
+    if (isOpen && userSchool && currentAcademicYear) {
+      loadModalData();
     }
-  ];
+  }, [isOpen, userSchool, currentAcademicYear]);
 
-  // Classes disponibles
-  const classes: ClassInfo[] = [
-    {
-      id: 'maternelle-1a',
-      name: 'Maternelle 1A',
-      level: 'Maternelle',
-      teacher: 'Mme Aminata Kone',
-      subjects: ['Éveil', 'Langage', 'Graphisme', 'Jeux éducatifs']
-    },
-    {
-      id: 'ci-a',
-      name: 'CI A',
-      level: 'CI',
-      teacher: 'M. Moussa Traore',
-      subjects: ['Français', 'Mathématiques', 'Éveil Scientifique', 'Éducation Civique']
-    },
-    {
-      id: 'ce2b',
-      name: 'CE2B',
-      level: 'CE2',
-      teacher: 'M. Ibrahim Sidibe',
-      subjects: ['Français', 'Mathématiques', 'Histoire-Géographie', 'Sciences', 'Éducation Civique']
+  const loadModalData = async () => {
+    if (!userSchool || !currentAcademicYear) return;
+
+    try {
+      setLoading(true);
+
+      const [teachersData, classesData, subjectsData, classroomsData] = await Promise.all([
+        TeacherService.getTeachers(userSchool.id),
+        ClassService.getClasses(userSchool.id, currentAcademicYear.id),
+        SubjectService.getSubjects(userSchool.id),
+        ClassroomService.getClassrooms(userSchool.id)
+      ]);
+
+      // Mapper les enseignants avec leurs classes assignées
+      const mappedTeachers = teachersData.map(teacher => {
+        const activeAssignment = teacher.current_assignment?.find((a: any) => a.is_active);
+        return {
+          id: teacher.id,
+          name: `${teacher.first_name} ${teacher.last_name}`,
+          assignedClass: activeAssignment?.class?.name || 'Disponible',
+          subjects: activeAssignment?.class?.subjects || []
+        };
+      });
+
+      // Mapper les classes avec leurs enseignants
+      const mappedClasses = classesData.map(cls => ({
+        id: cls.id,
+        name: cls.name,
+        level: cls.level,
+        teacher: cls.teacher_assignment?.[0]?.teacher 
+          ? `${cls.teacher_assignment[0].teacher.first_name} ${cls.teacher_assignment[0].teacher.last_name}`
+          : 'Non assigné',
+        subjects: cls.subjects || []
+      }));
+
+      setTeachers(mappedTeachers);
+      setClasses(mappedClasses);
+      setSubjects(subjectsData);
+      setClassrooms(classroomsData);
+
+    } catch (error) {
+      console.error('Erreur lors du chargement des données:', error);
+    } finally {
+      setLoading(false);
     }
-  ];
-
+  };
   const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
   const timeSlots = [
     { value: '08:00', label: '08:00' },
@@ -116,11 +113,6 @@ const AddCourseModal: React.FC<AddCourseModalProps> = ({
     { value: '14:00', label: '14:00' },
     { value: '16:00', label: '16:00' },
     { value: '18:00', label: '18:00' }
-  ];
-
-  const classrooms = [
-    'Salle 1', 'Salle 2', 'Salle 3', 'Salle 8', 'Salle 12', 'Salle 15',
-    'Laboratoire 1', 'Bibliothèque', 'Salle Informatique'
   ];
 
   const validateForm = () => {
@@ -276,7 +268,13 @@ const AddCourseModal: React.FC<AddCourseModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {loading ? (
+          <div className="p-6 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Chargement des données...</p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Système d'enseignant unique */}
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
             <h3 className="font-medium text-blue-800 mb-2">Système d'Enseignant Unique</h3>
@@ -471,7 +469,7 @@ const AddCourseModal: React.FC<AddCourseModalProps> = ({
               >
                 <option value="">Choisir une salle</option>
                 {classrooms.map(room => (
-                  <option key={room} value={room}>{room}</option>
+                  <option key={room.id} value={room.name}>{room.name} (Capacité: {room.capacity})</option>
                 ))}
               </select>
               {errors.classroom && <p className="text-red-500 text-sm mt-1">{errors.classroom}</p>}
@@ -523,7 +521,8 @@ const AddCourseModal: React.FC<AddCourseModalProps> = ({
               <span>Ajouter le Cours</span>
             </button>
           </div>
-        </form>
+          </form>
+        )}
       </div>
     </div>
   );

@@ -1,41 +1,78 @@
 import React, { useState } from 'react';
 import { MapPin, Users, Clock, AlertCircle } from 'lucide-react';
+import { useAuth } from '../Auth/AuthProvider';
+import { ClassroomService } from '../../services/classroomService';
+import { ScheduleService } from '../../services/scheduleService';
 
 const ClassroomSchedule: React.FC = () => {
+  const { userSchool, currentAcademicYear } = useAuth();
   const [selectedRoom, setSelectedRoom] = useState('salle-12');
+  const [classrooms, setClassrooms] = useState<any[]>([]);
+  const [roomSchedule, setRoomSchedule] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const classrooms = [
-    { id: 'salle-12', name: 'Salle 12', capacity: 45, type: 'Classe Standard', equipment: ['Tableau', 'Projecteur'] },
-    { id: 'salle-8', name: 'Salle 8', capacity: 40, type: 'Classe Standard', equipment: ['Tableau'] },
-    { id: 'labo-1', name: 'Laboratoire 1', capacity: 30, type: 'Laboratoire', equipment: ['Équipement Scientifique', 'Tableau'] },
-    { id: 'salle-15', name: 'Salle 15', capacity: 35, type: 'Classe Standard', equipment: ['Tableau', 'Ordinateur'] },
-    { id: 'biblio', name: 'Bibliothèque', capacity: 50, type: 'Espace Lecture', equipment: ['Livres', 'Tables'] },
-    { id: 'gym', name: 'Gymnase', capacity: 100, type: 'Sport', equipment: ['Équipement Sportif'] }
-  ];
+  // Charger les données au montage
+  React.useEffect(() => {
+    if (userSchool && currentAcademicYear) {
+      loadClassroomData();
+    }
+  }, [userSchool, currentAcademicYear]);
 
-  const roomSchedules = {
-    'salle-12': [
-      { day: 'Lundi', time: '08:00-09:00', subject: 'Mathématiques', class: 'CM2A', teacher: 'M. Traore' },
-      { day: 'Lundi', time: '10:30-11:30', subject: 'Mathématiques', class: 'CM2B', teacher: 'M. Traore' },
-      { day: 'Mardi', time: '09:00-10:00', subject: 'Sciences', class: 'CM1A', teacher: 'M. Sidibe' },
-      { day: 'Mercredi', time: '08:00-09:00', subject: 'Mathématiques', class: 'CM2A', teacher: 'M. Traore' },
-      { day: 'Jeudi', time: '14:00-15:00', subject: 'Français', class: 'CM1B', teacher: 'Mme Kone' },
-      { day: 'Vendredi', time: '08:00-09:00', subject: 'Mathématiques', class: 'CM2B', teacher: 'M. Traore' }
-    ],
-    'labo-1': [
-      { day: 'Lundi', time: '09:00-10:00', subject: 'Sciences', class: 'CM1A', teacher: 'M. Traore' },
-      { day: 'Mardi', time: '08:00-09:00', subject: 'Sciences', class: 'CM2A', teacher: 'M. Traore' },
-      { day: 'Mercredi', time: '10:30-11:30', subject: 'Sciences', class: 'CM2B', teacher: 'M. Sidibe' },
-      { day: 'Jeudi', time: '09:00-10:00', subject: 'Sciences', class: 'CM1A', teacher: 'M. Traore' },
-      { day: 'Vendredi', time: '14:00-15:00', subject: 'Sciences', class: 'CE2A', teacher: 'M. Sidibe' }
-    ]
+  // Charger les données des salles et leur emploi du temps
+  React.useEffect(() => {
+    if (selectedRoom && currentAcademicYear) {
+      loadRoomSchedule();
+    }
+  }, [selectedRoom, currentAcademicYear]);
+
+  const loadClassroomData = async () => {
+    if (!userSchool) return;
+
+    try {
+      setLoading(true);
+      const classroomsData = await ClassroomService.getClassrooms(userSchool.id);
+      setClassrooms(classroomsData);
+      
+      // Sélectionner la première salle si aucune n'est sélectionnée
+      if (!selectedRoom && classroomsData.length > 0) {
+        setSelectedRoom(classroomsData[0].id);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des salles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadRoomSchedule = async () => {
+    if (!selectedRoom || !currentAcademicYear) return;
+
+    try {
+      setLoading(true);
+      const scheduleData = await ScheduleService.getClassroomSchedule(selectedRoom, currentAcademicYear.id);
+      
+      // Mapper les données
+      const mappedSchedule = scheduleData.map(slot => ({
+        day: slot.day_name,
+        time: `${slot.start_time}-${slot.end_time}`,
+        subject: slot.subject_name,
+        class: slot.class_name,
+        teacher: `${slot.teacher_first_name} ${slot.teacher_last_name}`
+      }));
+      
+      setRoomSchedule(mappedSchedule);
+    } catch (error) {
+      console.error('Erreur lors du chargement de l\'emploi du temps de la salle:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
   const timeSlots = ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
 
   const currentRoom = classrooms.find(r => r.id === selectedRoom);
-  const schedule = roomSchedules[selectedRoom as keyof typeof roomSchedules] || [];
+  const schedule = roomSchedule;
 
   const getScheduleForSlot = (day: string, timeSlot: string) => {
     return schedule.find(item => item.day === day && item.time === timeSlot);
@@ -55,6 +92,17 @@ const ClassroomSchedule: React.FC = () => {
   };
 
   const occupancyRate = (schedule.length / (days.length * timeSlots.length)) * 100;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement des données...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -77,7 +125,7 @@ const ClassroomSchedule: React.FC = () => {
             className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             {classrooms.map(room => (
-              <option key={room.id} value={room.id}>{room.name}</option>
+              <option key={room.id} value={room.id}>{room.name} ({room.type})</option>
             ))}
           </select>
         </div>
@@ -152,11 +200,14 @@ const ClassroomSchedule: React.FC = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Équipements Disponibles</h3>
           <div className="flex flex-wrap gap-2">
-            {currentRoom.equipment.map((item, index) => (
+            {(currentRoom.equipment || []).map((item, index) => (
               <span key={index} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm">
                 {item}
               </span>
             ))}
+            {(!currentRoom.equipment || currentRoom.equipment.length === 0) && (
+              <span className="text-gray-500 italic">Aucun équipement renseigné</span>
+            )}
           </div>
         </div>
       )}
@@ -285,6 +336,20 @@ const ClassroomSchedule: React.FC = () => {
               </div>
             )}
             
+            {schedule.length === 0 && (
+              <div className="p-3 border border-blue-200 rounded-lg bg-blue-50">
+                <div className="flex items-start space-x-2">
+                  <span className="text-blue-600 mt-0.5">💡</span>
+                  <div>
+                    <p className="font-medium text-blue-800">Salle disponible</p>
+                    <p className="text-sm text-blue-600">
+                      Cette salle est entièrement libre et peut être utilisée
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="p-3 border border-blue-200 rounded-lg bg-blue-50">
               <div className="flex items-start space-x-2">
                 <span className="text-blue-600 mt-0.5">💡</span>
@@ -299,6 +364,14 @@ const ClassroomSchedule: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {classrooms.length === 0 && !loading && (
+        <div className="text-center py-12">
+          <MapPin className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-800 mb-2">Aucune salle configurée</h3>
+          <p className="text-gray-600">Configurez des salles de classe dans les paramètres</p>
+        </div>
+      )}
     </div>
   );
 };

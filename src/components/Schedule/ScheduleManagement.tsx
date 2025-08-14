@@ -12,55 +12,23 @@ interface TimeSlot {
   class: string;
   day: string;
 }
+import { useAuth } from '../Auth/AuthProvider';
+import { ScheduleService } from '../../services/scheduleService';
+import { ClassService } from '../../services/classService';
+import { TeacherService } from '../../services/teacherService';
 
 const ScheduleManagement: React.FC = () => {
+  const { userSchool, currentAcademicYear } = useAuth();
   const [selectedClass, setSelectedClass] = useState('CM2A');
   const [selectedWeek, setSelectedWeek] = useState('current');
   const [viewMode, setViewMode] = useState<'week' | 'class' | 'teacher'>('week');
   const [showAddCourseModal, setShowAddCourseModal] = useState(false);
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([
-
-    {
-      id: '1',
-      startTime: '08:00',
-      endTime: '09:00',
-      subject: 'Français',
-      teacher: 'M. Traore (Enseignant unique)',
-      classroom: 'Salle 12',
-      class: 'CI A',
-      day: 'Lundi'
-    },
-    {
-      id: '2',
-      startTime: '09:00',
-      endTime: '10:00',
-      subject: 'Mathématiques',
-      teacher: 'M. Traore (Enseignant unique)',
-      classroom: 'Salle 12',
-      class: 'CI A',
-      day: 'Lundi'
-    },
-    {
-      id: '3',
-      startTime: '10:30',
-      endTime: '11:30',
-      subject: 'Éveil Scientifique',
-      teacher: 'M. Traore (Enseignant unique)',
-      classroom: 'Salle 12',
-      class: 'CI A',
-      day: 'Lundi'
-    },
-    {
-      id: '4',
-      startTime: '08:00',
-      endTime: '09:00',
-      subject: 'Éducation Civique',
-      teacher: 'M. Traore (Enseignant unique)',
-      classroom: 'Salle 12',
-      class: 'CI A',
-      day: 'Mardi'
-    }
-  ]);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [scheduleStats, setScheduleStats] = useState<any>(null);
 
   const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
   const timeSlotHours = [
@@ -71,13 +39,58 @@ const ScheduleManagement: React.FC = () => {
     '16:00-18:00'
   ];
 
-  const classes = ['Maternelle 1A', 'Maternelle 1B', 'CI A', 'CP1', 'CP2', 'CE1A', 'CE2B', 'CM2A'];
-  const teachers = [
-    { name: 'M. Traore', class: 'CI A' },
-    { name: 'Mme Kone', class: 'Maternelle 1A' },
-    { name: 'M. Sidibe', class: 'CE2B' },
-    { name: 'Mlle Coulibaly', class: 'Disponible' }
-  ];
+  // Charger les données au montage
+  React.useEffect(() => {
+    if (userSchool && currentAcademicYear) {
+      loadScheduleData();
+    }
+  }, [userSchool, currentAcademicYear]);
+
+  const loadScheduleData = async () => {
+    if (!userSchool || !currentAcademicYear) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [scheduleData, classesData, teachersData] = await Promise.all([
+        ScheduleService.getSchedule(userSchool.id, currentAcademicYear.id),
+        ClassService.getClasses(userSchool.id, currentAcademicYear.id),
+        TeacherService.getTeachers(userSchool.id)
+      ]);
+
+      // Mapper les données de l'emploi du temps
+      const mappedTimeSlots: TimeSlot[] = scheduleData.map(slot => ({
+        id: slot.id,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        subject: slot.subject_name,
+        teacher: `${slot.teacher_first_name} ${slot.teacher_last_name} (Enseignant unique)`,
+        classroom: slot.classroom_name || 'Non assignée',
+        class: slot.class_name,
+        day: slot.day_name
+      }));
+
+      setTimeSlots(mappedTimeSlots);
+      setClasses(classesData);
+      setTeachers(teachersData);
+
+      // Calculer les statistiques
+      const stats = {
+        totalCourses: scheduleData.length,
+        activeClasses: classesData.length,
+        assignedTeachers: teachersData.filter(t => t.current_assignment?.some((a: any) => a.is_active)).length,
+        unassignedClasses: classesData.filter(c => !c.teacher_assignment || c.teacher_assignment.length === 0).length
+      };
+      setScheduleStats(stats);
+
+    } catch (error: any) {
+      console.error('Erreur lors du chargement de l\'emploi du temps:', error);
+      setError(error.message || 'Erreur lors du chargement');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAddCourse = (courseData: any) => {
     const newTimeSlot: TimeSlot = {
@@ -123,6 +136,34 @@ const ScheduleManagement: React.FC = () => {
     return colors[subject as keyof typeof colors] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement de l'emploi du temps...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <AlertCircle className="h-8 w-8 text-red-600 mx-auto mb-4" />
+          <p className="text-red-600 mb-4">{error}</p>
+          <button
+            onClick={loadScheduleData}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Réessayer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -153,7 +194,7 @@ const ScheduleManagement: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Cours Programmés</p>
-              <p className="text-2xl font-bold text-gray-800">342</p>
+              <p className="text-2xl font-bold text-gray-800">{scheduleStats?.totalCourses || 0}</p>
             </div>
             <div className="p-3 bg-blue-50 rounded-xl">
               <Calendar className="h-6 w-6 text-blue-600" />
@@ -168,7 +209,7 @@ const ScheduleManagement: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Classes Actives</p>
-              <p className="text-2xl font-bold text-gray-800">21</p>
+              <p className="text-2xl font-bold text-gray-800">{scheduleStats?.activeClasses || 0}</p>
             </div>
             <div className="p-3 bg-green-50 rounded-xl">
               <Users className="h-6 w-6 text-green-600" />
@@ -198,7 +239,7 @@ const ScheduleManagement: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Classes sans Enseignant</p>
-              <p className="text-2xl font-bold text-gray-800">2</p>
+              <p className="text-2xl font-bold text-gray-800">{scheduleStats?.unassignedClasses || 0}</p>
             </div>
             <div className="p-3 bg-red-50 rounded-xl">
               <span className="text-2xl">⚠️</span>
@@ -250,7 +291,7 @@ const ScheduleManagement: React.FC = () => {
               className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               {classes.map(cls => (
-                <option key={cls} value={cls}>{cls}</option>
+                <option key={cls.id} value={cls.name}>{cls.name}</option>
               ))}
             </select>
 
@@ -361,33 +402,37 @@ const ScheduleManagement: React.FC = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-800">Alertes Système</h3>
-            <span className="px-2 py-1 bg-red-50 text-red-700 rounded-full text-sm font-medium">2</span>
+            <span className="px-2 py-1 bg-red-50 text-red-700 rounded-full text-sm font-medium">
+              {scheduleStats?.unassignedClasses || 0}
+            </span>
           </div>
           
           <div className="space-y-3">
-            <div className="p-3 border border-red-200 rounded-lg bg-red-50">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-medium text-red-800">Classe sans enseignant</p>
-                  <p className="text-sm text-red-600">CP1 - 30 élèves sans enseignant assigné</p>
+            {scheduleStats?.unassignedClasses > 0 ? (
+              classes
+                .filter(c => !c.teacher_assignment || c.teacher_assignment.length === 0)
+                .slice(0, 3)
+                .map(cls => (
+                  <div key={cls.id} className="p-3 border border-red-200 rounded-lg bg-red-50">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-medium text-red-800">Classe sans enseignant</p>
+                        <p className="text-sm text-red-600">{cls.name} - {cls.current_students} élèves sans enseignant assigné</p>
+                      </div>
+                      <button className="text-red-600 hover:text-red-800 text-sm font-medium">
+                        Assigner
+                      </button>
+                    </div>
+                  </div>
+                ))
+            ) : (
+              <div className="p-3 border border-green-200 rounded-lg bg-green-50">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <p className="font-medium text-green-800">Toutes les classes ont un enseignant</p>
                 </div>
-                <button className="text-red-600 hover:text-red-800 text-sm font-medium">
-                  Assigner
-                </button>
               </div>
-            </div>
-            
-            <div className="p-3 border border-yellow-200 rounded-lg bg-yellow-50">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-medium text-yellow-800">Emploi du temps incomplet</p>
-                  <p className="text-sm text-yellow-600">CE1B - Seulement 18h/30h programmées</p>
-                </div>
-                <button className="text-yellow-600 hover:text-yellow-800 text-sm font-medium">
-                  Compléter
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -401,32 +446,21 @@ const ScheduleManagement: React.FC = () => {
           </div>
           
           <div className="space-y-3">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800">Enseignant assigné</p>
-                <p className="text-xs text-gray-500">Mlle Coulibaly → CP1 (Enseignant unique)</p>
-                <p className="text-xs text-gray-400">Il y a 2 heures</p>
+            {timeSlots.length === 0 ? (
+              <div className="text-center py-4">
+                <Calendar className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500">Aucune modification récente</p>
               </div>
-            </div>
-            
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800">Emploi du temps généré</p>
-                <p className="text-xs text-gray-500">CP1 - Planning automatique créé</p>
-                <p className="text-xs text-gray-400">Il y a 4 heures</p>
+            ) : (
+              <div className="flex items-start space-x-3">
+                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-800">Emploi du temps chargé</p>
+                  <p className="text-xs text-gray-500">{timeSlots.length} cours programmés</p>
+                  <p className="text-xs text-gray-400">Maintenant</p>
+                </div>
               </div>
-            </div>
-            
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-red-500 rounded-full mt-2"></div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800">Changement d'enseignant</p>
-                <p className="text-xs text-gray-500">CE2A - M. Diallo remplace Mme Bah</p>
-                <p className="text-xs text-gray-400">Hier</p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
