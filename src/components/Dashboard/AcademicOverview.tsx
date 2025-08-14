@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Users } from 'lucide-react';
 import { useAuth } from '../Auth/AuthProvider';
 import { supabase } from '../../lib/supabase';
 
