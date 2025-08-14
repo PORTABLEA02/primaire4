@@ -1,6 +1,7 @@
 import React from 'react';
 import { Clock, User, CreditCard, RefreshCw, Eye } from 'lucide-react';
 import { formatRelativeTime } from '../../utils/formatters';
+import AllPaymentsModal from './AllPaymentsModal';
 
 interface RecentPaymentsTableProps {
   payments: Array<{
@@ -33,6 +34,8 @@ const RecentPaymentsTable: React.FC<RecentPaymentsTableProps> = ({
   loading,
   onRefresh
 }) => {
+  const [showAllPaymentsModal, setShowAllPaymentsModal] = React.useState(false);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Confirmé': return 'bg-green-50 text-green-700';
@@ -76,7 +79,10 @@ const RecentPaymentsTable: React.FC<RecentPaymentsTableProps> = ({
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-medium">
+          <button 
+            onClick={() => setShowAllPaymentsModal(true)}
+            className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-medium"
+          >
             Voir tout
           </button>
         </div>
@@ -155,6 +161,12 @@ const RecentPaymentsTable: React.FC<RecentPaymentsTableProps> = ({
           <p className="text-sm text-gray-400">Les paiements apparaîtront ici une fois enregistrés</p>
         </div>
       )}
+
+      {/* Modal Tous les Paiements */}
+      <AllPaymentsModal
+        isOpen={showAllPaymentsModal}
+        onClose={() => setShowAllPaymentsModal(false)}
+      />
     </div>
   );
 };

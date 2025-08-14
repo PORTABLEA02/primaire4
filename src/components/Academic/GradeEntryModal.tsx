@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { X, BookOpen, Save, Users, Calculator, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 import { useAcademicYear } from '../../contexts/AcademicYearContext';
+import { useAuth } from '../Auth/AuthProvider';
+import { StudentService } from '../../services/studentService';
+import { GradeService } from '../../services/gradeService';
+import { SubjectService } from '../../services/subjectService';
+import { supabase } from '../../lib/supabase';
 
 interface GradeEntryModalProps {
   isOpen: boolean;
@@ -32,33 +37,13 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
   selectedSubject,
   selectedPeriod
 }) => {
-  const { currentAcademicYear } = useAcademicYear();
+  const { userSchool, currentAcademicYear } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [classInfo, setClassInfo] = useState<any>(null);
+  const [subjectInfo, setSubjectInfo] = useState<any>(null);
+  const [activePeriod, setActivePeriod] = useState<any>(null);
   
-  // Données d'exemple des élèves selon la classe
-  const getStudentsForClass = (className: string): Student[] => {
-    const baseStudents = {
-      'CM2A': [
-        { id: '1', firstName: 'Kofi', lastName: 'Mensah', currentGrade: null, previousGrade: 14.5, attendance: 95 },
-        { id: '2', firstName: 'Aminata', lastName: 'Traore', currentGrade: null, previousGrade: 16.0, attendance: 98 },
-        { id: '3', firstName: 'Ibrahim', lastName: 'Kone', currentGrade: null, previousGrade: 12.5, attendance: 92 },
-        { id: '4', firstName: 'Fatoumata', lastName: 'Diallo', currentGrade: null, previousGrade: 15.5, attendance: 96 },
-        { id: '5', firstName: 'Sekou', lastName: 'Sangare', currentGrade: null, previousGrade: 11.0, attendance: 88 }
-      ],
-      'CE2B': [
-        { id: '6', firstName: 'Aissata', lastName: 'Ba', currentGrade: null, previousGrade: 13.5, attendance: 94 },
-        { id: '7', firstName: 'Moussa', lastName: 'Coulibaly', currentGrade: null, previousGrade: 12.0, attendance: 90 },
-        { id: '8', firstName: 'Mariam', lastName: 'Sidibe', currentGrade: null, previousGrade: 15.0, attendance: 97 }
-      ],
-      'CM1A': [
-        { id: '9', firstName: 'Ousmane', lastName: 'Keita', currentGrade: null, previousGrade: 14.0, attendance: 93 },
-        { id: '10', firstName: 'Kadiatou', lastName: 'Toure', currentGrade: null, previousGrade: 16.5, attendance: 99 }
-      ]
-    };
-    
-    return baseStudents[className as keyof typeof baseStudents] || [];
-  };
-
-  const [students, setStudents] = useState<Student[]>(getStudentsForClass(selectedClass));
   const [grades, setGrades] = useState<Record<string, GradeEntry>>({});
   const [evaluationType, setEvaluationType] = useState<'devoir' | 'composition' | 'interrogation'>('devoir');
   const [evaluationTitle, setEvaluationTitle] = useState('');
@@ -67,13 +52,76 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   React.useEffect(() => {
-    if (selectedClass) {
-      const classStudents = getStudentsForClass(selectedClass);
-      setStudents(classStudents);
+    if (isOpen && selectedClass && selectedSubject && userSchool && currentAcademicYear) {
+      loadGradeEntryData();
+    }
+  }, [isOpen, selectedClass, selectedSubject, userSchool, currentAcademicYear]);
+
+  const loadGradeEntryData = async () => {
+    if (!userSchool || !currentAcademicYear || !selectedClass || !selectedSubject) return;
+
+    try {
+      setLoading(true);
+
+      // Trouver la classe par nom
+      const { data: classData } = await supabase
+        .from('classes')
+        .select('*')
+        .eq('school_id', userSchool.id)
+        .eq('academic_year_id', currentAcademicYear.id)
+        .eq('name', selectedClass)
+        .single();
+
+      if (!classData) {
+        throw new Error('Classe non trouvée');
+      }
+      setClassInfo(classData);
+
+      // Trouver la matière par nom
+      const { data: subjectData } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('school_id', userSchool.id)
+        .eq('name', selectedSubject)
+        .single();
+
+      if (!subjectData) {
+        throw new Error('Matière non trouvée');
+      }
+      setSubjectInfo(subjectData);
+      setCoefficient(subjectData.coefficient || 1);
+
+      // Trouver la période active
+      const { data: periodData } = await supabase
+        .from('grade_periods')
+        .select('*')
+        .eq('school_id', userSchool.id)
+        .eq('academic_year_id', currentAcademicYear.id)
+        .eq('name', selectedPeriod)
+        .single();
+
+      if (periodData) {
+        setActivePeriod(periodData);
+      }
+
+      // Charger les élèves de la classe
+      const studentsData = await StudentService.getStudentsByClass(classData.id, currentAcademicYear.id);
+      
+      // Mapper vers le format attendu
+      const mappedStudents: Student[] = studentsData.map((student, index) => ({
+        id: student.student_id,
+        firstName: student.first_name,
+        lastName: student.last_name,
+        currentGrade: null,
+        previousGrade: undefined, // Sera chargé séparément si nécessaire
+        attendance: 95 // Valeur par défaut, sera remplacée par les vraies données d'assiduité
+      }));
+
+      setStudents(mappedStudents);
       
       // Initialiser les notes vides
       const initialGrades: Record<string, GradeEntry> = {};
-      classStudents.forEach(student => {
+      mappedStudents.forEach(student => {
         initialGrades[student.id] = {
           studentId: student.id,
           grade: null,
@@ -81,8 +129,41 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
         };
       });
       setGrades(initialGrades);
+
+      // Charger les notes existantes si disponibles
+      if (periodData) {
+        await loadExistingGrades(classData.id, subjectData.id, periodData.id);
+      }
+
+    } catch (error: any) {
+      console.error('Erreur lors du chargement des données:', error);
+      alert(`Erreur: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
-  }, [selectedClass]);
+  };
+
+  const loadExistingGrades = async (classId: string, subjectId: string, periodId: string) => {
+    try {
+      const existingGrades = await GradeService.getClassGrades(classId, subjectId, periodId);
+      
+      // Mettre à jour les notes existantes
+      const updatedGrades = { ...grades };
+      existingGrades.forEach(grade => {
+        if (updatedGrades[grade.student_id]) {
+          updatedGrades[grade.student_id] = {
+            studentId: grade.student_id,
+            grade: grade.grade_value,
+            comment: grade.teacher_comment || ''
+          };
+        }
+      });
+      setGrades(updatedGrades);
+
+    } catch (error) {
+      console.error('Erreur lors du chargement des notes existantes:', error);
+    }
+  };
 
   const updateGrade = (studentId: string, grade: number | null) => {
     setGrades(prev => ({
@@ -132,26 +213,59 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
   const handleSave = async () => {
     setIsSaving(true);
     
-    // Simulation de sauvegarde
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    console.log('Notes sauvegardées:', {
-      class: selectedClass,
-      subject: selectedSubject,
-      period: selectedPeriod,
-      academicYear: currentAcademicYear,
-      evaluationType,
-      evaluationTitle,
-      evaluationDate,
-      coefficient,
-      grades: Object.values(grades).filter(g => g.grade !== null)
-    });
-    
-    setIsSaving(false);
-    onClose();
-    
-    // Notification de succès
-    alert(`Notes sauvegardées avec succès pour ${selectedClass} - ${selectedSubject}`);
+    try {
+      if (!classInfo || !subjectInfo || !activePeriod || !userSchool || !currentAcademicYear) {
+        throw new Error('Données manquantes pour la sauvegarde');
+      }
+
+      // Trouver l'enseignant de la classe
+      const { data: teacherAssignment } = await supabase
+        .from('teacher_class_assignments')
+        .select('teacher_id')
+        .eq('class_id', classInfo.id)
+        .eq('academic_year_id', currentAcademicYear.id)
+        .eq('is_active', true)
+        .single();
+
+      if (!teacherAssignment) {
+        throw new Error('Aucun enseignant assigné à cette classe');
+      }
+
+      // Préparer les notes à sauvegarder
+      const gradesToSave = Object.values(grades)
+        .filter(g => g.grade !== null)
+        .map(gradeEntry => ({
+          student_id: gradeEntry.studentId,
+          class_id: classInfo.id,
+          subject_id: subjectInfo.id,
+          teacher_id: teacherAssignment.teacher_id,
+          school_id: userSchool.id,
+          academic_year_id: currentAcademicYear.id,
+          grade_period_id: activePeriod.id,
+          grade_value: gradeEntry.grade,
+          coefficient: coefficient,
+          evaluation_type: evaluationType,
+          evaluation_title: evaluationTitle,
+          evaluation_date: evaluationDate,
+          teacher_comment: gradeEntry.comment
+        }));
+
+      if (gradesToSave.length === 0) {
+        throw new Error('Aucune note à sauvegarder');
+      }
+
+      // Sauvegarder en lot
+      await GradeService.saveBulkGrades(gradesToSave);
+      
+      onClose();
+      alert(`${gradesToSave.length} note(s) sauvegardée(s) avec succès pour ${selectedClass} - ${selectedSubject}`);
+      
+    } catch (error: any) {
+      console.error('Erreur lors de la sauvegarde:', error);
+      alert(`Erreur lors de la sauvegarde: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const completedGrades = Object.values(grades).filter(g => g.grade !== null).length;
@@ -159,6 +273,19 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
   const classAverage = calculateClassAverage();
 
   if (!isOpen) return null;
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white p-6 rounded-lg">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Chargement des données...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -173,7 +300,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
               <div>
                 <h2 className="text-xl font-bold text-gray-800">Saisie des Notes</h2>
                 <p className="text-gray-600">
-                  {selectedClass} • {selectedSubject} • {selectedPeriod}
+                  {selectedClass} • {selectedSubject} • {selectedPeriod} • Année {currentAcademicYear?.name || currentAcademicYear}
                 </p>
               </div>
             </div>
@@ -312,14 +439,14 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
                 const newGrades = { ...grades };
                 students.forEach(student => {
                   if (!newGrades[student.id].grade) {
-                    newGrades[student.id].grade = student.previousGrade || 10;
+                    newGrades[student.id].grade = 10; // Note par défaut
                   }
                 });
                 setGrades(newGrades);
               }}
-              className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm hover:bg-blue-200 transition-colors"
+              className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 transition-colors"
             >
-              Reprendre notes précédentes
+              Note par défaut (10/20)
             </button>
             
             <button
@@ -333,22 +460,6 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
               className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 transition-colors"
             >
               Effacer tout
-            </button>
-            
-            <button
-              onClick={() => {
-                const average = 12;
-                const newGrades = { ...grades };
-                students.forEach(student => {
-                  if (!newGrades[student.id].grade) {
-                    newGrades[student.id].grade = average;
-                  }
-                });
-                setGrades(newGrades);
-              }}
-              className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-sm hover:bg-yellow-200 transition-colors"
-            >
-              Appliquer moyenne (12/20)
             </button>
           </div>
 
@@ -390,17 +501,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
                         </td>
                         
                         <td className="px-6 py-4 text-center">
-                          {student.previousGrade ? (
-                            <span className={`px-2 py-1 rounded text-sm font-medium ${
-                              student.previousGrade >= 14 ? 'bg-green-100 text-green-700' :
-                              student.previousGrade >= 10 ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-red-100 text-red-700'
-                            }`}>
-                              {student.previousGrade}/20
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-sm">--</span>
-                          )}
+                          <span className="text-gray-400 text-sm">--</span>
                         </td>
                         
                         <td className="px-6 py-4 text-center">
@@ -551,7 +652,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = ({
               
               <button
                 onClick={handleSave}
-                disabled={completedGrades === 0 || isSaving}
+                disabled={completedGrades === 0 || isSaving || loading}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 {isSaving ? (

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { X, Calculator, BookOpen, Users, TrendingUp, CheckCircle, AlertCircle, FileText, Download } from 'lucide-react';
 import BulletinGenerationModal from './BulletinGenerationModal';
-import { useAcademicYear } from '../../contexts/AcademicYearContext';
+import { useAuth } from '../Auth/AuthProvider';
+import { ClassService } from '../../services/classService';
+import { GradeService } from '../../services/gradeService';
+import { supabase } from '../../lib/supabase';
 
 interface CalculateAveragesModalProps {
   isOpen: boolean;
@@ -46,122 +49,135 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
   isOpen,
   onClose
 }) => {
-  const { currentAcademicYear } = useAcademicYear();
+  const { userSchool, currentAcademicYear } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [activePeriod, setActivePeriod] = useState<any>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('Trimestre 1');
   const [selectedClass, setSelectedClass] = useState('all');
   const [calculationStep, setCalculationStep] = useState<'config' | 'calculating' | 'results'>('config');
   const [progress, setProgress] = useState(0);
   const [showBulletinModal, setShowBulletinModal] = useState(false);
+  const [classAverages, setClassAverages] = useState<ClassAverage[]>([]);
+  const [topStudents, setTopStudents] = useState<StudentResult[]>([]);
 
-  // Données d'exemple des moyennes calculées
-  const [classAverages] = useState<ClassAverage[]>([
-    {
-      className: 'CM2A',
-      level: 'CM2',
-      studentCount: 42,
-      teacher: 'M. Ouattara',
-      generalAverage: 12.8,
-      passRate: 78.6,
-      subjects: [
-        { subject: 'Français', average: 13.2, coefficient: 4, gradeCount: 42, minGrade: 8.5, maxGrade: 18.0 },
-        { subject: 'Mathématiques', average: 11.8, coefficient: 4, gradeCount: 42, minGrade: 6.0, maxGrade: 19.5 },
-        { subject: 'Sciences', average: 13.5, coefficient: 2, gradeCount: 42, minGrade: 9.0, maxGrade: 17.5 },
-        { subject: 'Histoire-Géographie', average: 12.1, coefficient: 2, gradeCount: 42, minGrade: 7.5, maxGrade: 16.0 },
-        { subject: 'Anglais', average: 11.9, coefficient: 2, gradeCount: 42, minGrade: 8.0, maxGrade: 15.5 }
-      ]
-    },
-    {
-      className: 'CE2B',
-      level: 'CE2',
-      studentCount: 38,
-      teacher: 'M. Sidibe',
-      generalAverage: 13.1,
-      passRate: 84.2,
-      subjects: [
-        { subject: 'Français', average: 13.8, coefficient: 4, gradeCount: 38, minGrade: 9.0, maxGrade: 17.5 },
-        { subject: 'Mathématiques', average: 12.5, coefficient: 4, gradeCount: 38, minGrade: 7.5, maxGrade: 18.0 },
-        { subject: 'Sciences', average: 13.2, coefficient: 2, gradeCount: 38, minGrade: 10.0, maxGrade: 16.5 },
-        { subject: 'Histoire-Géographie', average: 12.8, coefficient: 2, gradeCount: 38, minGrade: 8.5, maxGrade: 16.0 }
-      ]
-    },
-    {
-      className: 'CI A',
-      level: 'CI',
-      studentCount: 32,
-      teacher: 'M. Traore',
-      generalAverage: 11.9,
-      passRate: 75.0,
-      subjects: [
-        { subject: 'Français', average: 12.3, coefficient: 4, gradeCount: 32, minGrade: 8.0, maxGrade: 16.5 },
-        { subject: 'Mathématiques', average: 11.2, coefficient: 4, gradeCount: 32, minGrade: 6.5, maxGrade: 17.0 },
-        { subject: 'Éveil Scientifique', average: 12.1, coefficient: 2, gradeCount: 32, minGrade: 9.0, maxGrade: 15.5 }
-      ]
-    }
-  ]);
-
-  const [topStudents] = useState<StudentResult[]>([
-    {
-      id: '1',
-      name: 'Aminata Traore',
-      class: 'CM2A',
-      generalAverage: 16.8,
-      rank: 1,
-      status: 'Admis',
-      subjects: [
-        { subject: 'Français', grades: [17.5, 16.0, 18.0], average: 17.2, coefficient: 4 },
-        { subject: 'Mathématiques', grades: [16.5, 17.0, 16.0], average: 16.5, coefficient: 4 },
-        { subject: 'Sciences', grades: [17.0, 16.5], average: 16.8, coefficient: 2 }
-      ]
-    },
-    {
-      id: '2',
-      name: 'Ibrahim Kone',
-      class: 'CE2B',
-      generalAverage: 16.2,
-      rank: 1,
-      status: 'Admis',
-      subjects: [
-        { subject: 'Français', grades: [16.0, 17.0, 15.5], average: 16.2, coefficient: 4 },
-        { subject: 'Mathématiques', grades: [15.5, 16.5, 16.0], average: 16.0, coefficient: 4 }
-      ]
-    },
-    {
-      id: '3',
-      name: 'Fatoumata Diallo',
-      class: 'CI A',
-      generalAverage: 15.1,
-      rank: 1,
-      status: 'Admis',
-      subjects: [
-        { subject: 'Français', grades: [15.0, 15.5, 14.5], average: 15.0, coefficient: 4 },
-        { subject: 'Mathématiques', grades: [15.5, 15.0, 15.5], average: 15.3, coefficient: 4 }
-      ]
-    }
-  ]);
-
-  const classes = ['CM2A', 'CM2B', 'CM1A', 'CE2B', 'CE1A', 'CP1', 'CP2', 'CI A'];
   const periods = ['Trimestre 1', 'Trimestre 2', 'Trimestre 3'];
 
+  // Charger les données au montage
+  React.useEffect(() => {
+    if (isOpen && userSchool && currentAcademicYear) {
+      loadCalculationData();
+    }
+  }, [isOpen, userSchool, currentAcademicYear]);
+
+  const loadCalculationData = async () => {
+    if (!userSchool || !currentAcademicYear) return;
+
+    try {
+      setLoading(true);
+
+      // Charger les classes
+      const classesData = await ClassService.getClasses(userSchool.id, currentAcademicYear.id);
+      setClasses(classesData);
+
+      // Charger la période active
+      const { data: periodData } = await supabase
+        .from('grade_periods')
+        .select('*')
+        .eq('school_id', userSchool.id)
+        .eq('academic_year_id', currentAcademicYear.id)
+        .eq('name', selectedPeriod)
+        .single();
+
+      if (periodData) {
+        setActivePeriod(periodData);
+      }
+
+    } catch (error) {
+      console.error('Erreur lors du chargement des données:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const startCalculation = async () => {
+    if (!activePeriod) {
+      alert('Période d\'évaluation non trouvée');
+      return;
+    }
+
     setCalculationStep('calculating');
     setProgress(0);
 
-    // Simulation du processus de calcul
-    const steps = [
-      'Récupération des notes...',
-      'Calcul des moyennes par matière...',
-      'Calcul des moyennes générales...',
-      'Calcul des classements...',
-      'Génération des statistiques...',
-      'Finalisation...'
-    ];
+    try {
+      // Calculer les moyennes pour les classes sélectionnées
+      const classesToProcess = selectedClass === 'all' 
+        ? classes 
+        : classes.filter(c => c.name === selectedClass);
 
-    for (let i = 0; i < steps.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setProgress(((i + 1) / steps.length) * 100);
+      const calculatedAverages: ClassAverage[] = [];
+      const allTopStudents: StudentResult[] = [];
+
+      for (let i = 0; i < classesToProcess.length; i++) {
+        const classData = classesToProcess[i];
+        setProgress(((i + 1) / classesToProcess.length) * 100);
+
+        // Calculer les statistiques de la classe
+        const classStats = await ClassService.getClassStats(classData.id, activePeriod.id);
+        
+        if (classStats) {
+          const classAverage: ClassAverage = {
+            className: classData.name,
+            level: classData.level,
+            studentCount: classStats.totalStudents || 0,
+            teacher: classData.teacher_assignment?.[0]?.teacher 
+              ? `${classData.teacher_assignment[0].teacher.first_name} ${classData.teacher_assignment[0].teacher.last_name}`
+              : 'Non assigné',
+            generalAverage: classStats.classAverage || 0,
+            passRate: classStats.passRate || 0,
+            subjects: classStats.subjectStats || []
+          };
+          calculatedAverages.push(classAverage);
+        }
+
+        // Obtenir le top 3 de la classe
+        try {
+          const { data: topStudentsData } = await supabase
+            .rpc('get_top_students_by_class', {
+              p_class_id: classData.id,
+              p_grade_period_id: activePeriod.id,
+              p_limit: 3
+            });
+
+          if (topStudentsData) {
+            const mappedTopStudents: StudentResult[] = topStudentsData.map((student: any) => ({
+              id: student.student_id,
+              name: student.student_name,
+              class: classData.name,
+              generalAverage: student.general_average,
+              rank: student.class_rank,
+              status: student.general_average >= 10 ? 'Admis' : 'En cours',
+              subjects: [] // Sera chargé séparément si nécessaire
+            }));
+            allTopStudents.push(...mappedTopStudents);
+          }
+        } catch (error) {
+          console.error('Erreur lors du chargement du top élèves:', error);
+        }
+
+        // Délai pour l'animation
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      setClassAverages(calculatedAverages);
+      setTopStudents(allTopStudents);
+      setCalculationStep('results');
+
+    } catch (error: any) {
+      console.error('Erreur lors du calcul:', error);
+      alert(`Erreur lors du calcul: ${error.message}`);
+      setCalculationStep('config');
     }
-
-    setCalculationStep('results');
   };
 
   const exportResults = (format: 'pdf' | 'excel') => {
@@ -251,7 +267,7 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                   >
                     <option value="all">Toutes les classes</option>
                     {classes.map(cls => (
-                      <option key={cls} value={cls}>{cls}</option>
+                      <option key={cls.id} value={cls.name}>{cls.name}</option>
                     ))}
                   </select>
                 </div>
@@ -261,7 +277,7 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                 <h3 className="font-medium text-blue-800 mb-3">Paramètres de Calcul</h3>
                 <div className="mb-4 p-3 bg-white rounded border">
                   <p className="text-sm text-blue-700">
-                    <strong>Année scolaire:</strong> {currentAcademicYear}
+                    <strong>Année scolaire:</strong> {currentAcademicYear?.name || currentAcademicYear}
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -342,6 +358,7 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
               <div className="text-center">
                 <button
                   onClick={startCalculation}
+                  disabled={loading}
                   className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 mx-auto"
                 >
                   <Calculator className="h-5 w-5" />
@@ -383,11 +400,11 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                   <p className="text-sm text-gray-600">Classes traitées</p>
                 </div>
                 <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <p className="text-2xl font-bold text-gray-800">2,847</p>
+                  <p className="text-2xl font-bold text-gray-800">--</p>
                   <p className="text-sm text-gray-600">Notes analysées</p>
                 </div>
                 <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <p className="text-2xl font-bold text-gray-800">1,247</p>
+                  <p className="text-2xl font-bold text-gray-800">--</p>
                   <p className="text-sm text-gray-600">Moyennes calculées</p>
                 </div>
               </div>
@@ -430,7 +447,12 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-blue-600">Moyenne Générale</p>
-                      <p className="text-2xl font-bold text-blue-800">12.6/20</p>
+                      <p className="text-2xl font-bold text-blue-800">
+                        {classAverages.length > 0 
+                          ? (classAverages.reduce((sum, c) => sum + c.generalAverage, 0) / classAverages.length).toFixed(1)
+                          : '--'
+                        }/20
+                      </p>
                     </div>
                     <TrendingUp className="h-6 w-6 text-blue-600" />
                   </div>
@@ -440,7 +462,12 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-green-600">Taux de Réussite</p>
-                      <p className="text-2xl font-bold text-green-800">79.2%</p>
+                      <p className="text-2xl font-bold text-green-800">
+                        {classAverages.length > 0 
+                          ? (classAverages.reduce((sum, c) => sum + c.passRate, 0) / classAverages.length).toFixed(1)
+                          : '--'
+                        }%
+                      </p>
                     </div>
                     <CheckCircle className="h-6 w-6 text-green-600" />
                   </div>
@@ -450,7 +477,9 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-purple-600">Élèves Traités</p>
-                      <p className="text-2xl font-bold text-purple-800">1,247</p>
+                      <p className="text-2xl font-bold text-purple-800">
+                        {classAverages.reduce((sum, c) => sum + c.studentCount, 0)}
+                      </p>
                     </div>
                     <Users className="h-6 w-6 text-purple-600" />
                   </div>
@@ -473,6 +502,13 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                   <h4 className="font-medium text-gray-800">Moyennes par Classe</h4>
                 </div>
                 
+                {classAverages.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Calculator className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">Aucune moyenne calculée</p>
+                    <p className="text-sm text-gray-400">Lancez le calcul pour voir les résultats</p>
+                  </div>
+                ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-gray-50">
@@ -554,6 +590,7 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
 
               {/* Top 3 des élèves */}
@@ -563,6 +600,13 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                 </div>
                 
                 <div className="p-6">
+                  {topStudents.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500">Aucun élève trouvé</p>
+                      <p className="text-sm text-gray-400">Les meilleurs élèves apparaîtront après le calcul</p>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {topStudents.map((student, index) => (
                       <div key={student.id} className="p-4 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
@@ -596,6 +640,7 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
               </div>
 
@@ -606,6 +651,13 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                 </div>
                 
                 <div className="p-6">
+                  {classAverages.length === 0 ? (
+                    <div className="text-center py-8">
+                      <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500">Aucune analyse disponible</p>
+                      <p className="text-sm text-gray-400">Lancez le calcul pour voir l'analyse par matière</p>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {classAverages.map((classData, classIndex) => (
                       <div key={classIndex} className="space-y-4">
@@ -656,6 +708,7 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
               </div>
 
@@ -684,7 +737,7 @@ const CalculateAveragesModal: React.FC<CalculateAveragesModalProps> = ({
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-500">
               {calculationStep === 'results' && (
-                <span>Calcul effectué le {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR')}</span>
+                <span>Calcul effectué le {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
               )}
             </div>
             
